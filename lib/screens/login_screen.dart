@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:idcard_automation/screens/schools_screen.dart';
 
 enum UserRole { school, designer }
@@ -48,13 +49,48 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
       try {
         // Sign in with Firebase Auth
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
 
+        // Get the authenticated user's ID
+        final userId = userCredential.user?.uid;
+
+        if (userId == null) {
+          throw Exception('User ID not found');
+        }
+
+        // Check user role in Firestore
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .get();
+
+        if (!userDoc.exists) {
+          // Sign out the user if no Firestore document exists
+          await FirebaseAuth.instance.signOut();
+          throw Exception('User profile not found. Please contact administrator.');
+        }
+
+        final userData = userDoc.data();
+        final userRole = userData?['role'] as String?;
+
+        // Convert selected role to string for comparison
+        final selectedRoleString = _selectedRole == UserRole.school ? 'school' : 'designer';
+
+        // Verify if the selected role matches the user's role in Firestore
+        if (userRole != selectedRoleString) {
+          // Sign out the user if roles don't match
+          await FirebaseAuth.instance.signOut();
+          throw Exception(
+            'Access denied. You are registered as a ${userRole ?? 'unknown'} user. '
+            'Please select the correct role and try again.',
+          );
+        }
+
         if (mounted) {
-          // Navigate to home screen after successful login
+          // Navigate to home screen after successful login and role verification
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => const SchoolsScreen(),
@@ -96,8 +132,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('An error occurred: ${e.toString()}'),
+              content: Text(e.toString().replaceAll('Exception: ', '')),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
             ),
           );
         }
