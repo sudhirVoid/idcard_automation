@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "287590359315",
+    "project_id": "idcard-30721",
+    "storage_bucket": "idcard-30721.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:287590359315:android:694aa3e32c2361a383bae6",
+        "android_client_info": {
+          "package_name": "com.example.idcard_automation"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAOmcTZyx_yw40_qIjcT1E3wcr1SNhWr8E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
