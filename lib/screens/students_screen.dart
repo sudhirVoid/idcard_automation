@@ -1,96 +1,172 @@
 import 'dart:io';
-
-import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:idcard_automation/models/section_model.dart';
 import 'package:idcard_automation/models/student_model.dart';
 import 'package:idcard_automation/screens/camera_screen.dart';
+import 'package:idcard_automation/services/excel_service.dart';
+import 'package:idcard_automation/services/firestore_service.dart';
 
 class StudentsScreen extends StatefulWidget {
-  final String schoolName;
   final String className;
-  final Section section;
+  final String sectionName;
 
-  const StudentsScreen(
-      {super.key,
-      required this.schoolName,
-      required this.className,
-      required this.section});
+  const StudentsScreen({
+    super.key,
+    required this.className,
+    required this.sectionName,
+  });
 
   @override
   State<StudentsScreen> createState() => _StudentsScreenState();
 }
 
 class _StudentsScreenState extends State<StudentsScreen> {
-  void _navigateToCamera(int studentIndex) async {
-    final imagePath = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const CameraScreen(),
-      ),
-    );
+  final ExcelService _excelService = ExcelService();
+  final FirestoreService _firestoreService = FirestoreService();
+  List<Student> _students = [];
+  bool _isLoading = true;
+  bool _isUploading = false;
 
-    if (imagePath != null) {
+  @override
+  void initState() {
+    super.initState();
+    _loadStudents();
+  }
+
+  Future<void> _loadStudents() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      final studentsData = await _firestoreService.getStudents(
+        className: widget.className,
+        sectionName: widget.sectionName,
+      );
+
       setState(() {
-        widget.section.students[studentIndex].imagePath = imagePath;
+        _students = studentsData
+            .map((data) => Student.fromFirestore(data, data['id']))
+            .toList();
+        _isLoading = false;
       });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading students: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  void _uploadExcel() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx'],
-    );
+  Future<void> _uploadExcel() async {
+    try {
+      // Pick Excel file
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+      );
 
-    if (result != null) {
+      if (result == null) return;
+
+      setState(() => _isUploading = true);
+
       File file = File(result.files.single.path!);
-      var bytes = file.readAsBytesSync();
-      var excel = Excel.decodeBytes(bytes);
 
-      // Use a temporary list to hold the students and prevent multiple setState calls.
-      final List<Student> newStudents = [];
+      // Parse Excel file
+      final students = await _excelService.parseExcelFile(file);
 
-      // Only process the first sheet in the Excel file.
-      if (excel.tables.keys.isNotEmpty) {
-        final String sheetName = excel.tables.keys.first;
-        final sheet = excel.tables[sheetName]!;
-
-        // Start from 1 to skip the header row.
-        for (var i = 1; i < sheet.rows.length; i++) {
-          final row = sheet.rows[i];
-
-          // Skip empty rows by checking the serial number.
-          if (row.isEmpty || row[0] == null || row[0]!.value.toString().isEmpty) {
-            continue;
-          }
-
-          final excelClassName = row[1]?.value.toString();
-          final excelSectionName = row[2]?.value.toString();
-
-          // Only add students that match the current class and section.
-          // The comparison is case-insensitive and trims whitespace to avoid mismatches.
-          if (excelClassName?.trim().toLowerCase() == widget.className.trim().toLowerCase() &&
-              excelSectionName?.trim().toLowerCase() == widget.section.name.trim().toLowerCase()) {
-            final student = Student(
-              name: row[3]?.value.toString() ?? '',
-              address: row[4]?.value.toString() ?? '',
-              parentName: row[5]?.value.toString() ?? '',
-              contactNumber: row[6]?.value.toString() ?? '',
-              busRoute: row[7]?.value.toString() ?? '',
-            );
-            newStudents.add(student);
-          }
-        }
+      if (students.isEmpty) {
+        throw Exception('No valid student data found in Excel file');
       }
 
-      // Update the state once with the new list of students.
-      // Clearing the list first ensures that re-uploading a file replaces the old data.
-      setState(() {
-        widget.section.students.clear();
-        widget.section.students.addAll(newStudents);
-      });
+      // Use all students from Excel (no filtering by class/section)
+      final filteredStudents = students;
+
+      // Upload to Firestore (clears existing data)
+      final count = await _firestoreService.uploadStudentsToFirestore(
+        students: filteredStudents,
+        className: widget.className,
+        sectionName: widget.sectionName,
+        clearExisting: true, // Clear old data
+      );
+
+      // Reload students
+      await _loadStudents();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully uploaded $count students'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  Future<void> _takePhoto(Student student) async {
+    final imageUrl = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CameraScreen(
+          studentId: student.id,
+          className: widget.className,
+          sectionName: widget.sectionName,
+          studentName: student.name,    // ⭐ Real name from Firestore
+          rollNo: student.rollNo,       // ⭐ Real roll number from Firestore
+        ),
+      ),
+    );
+
+    if (imageUrl != null) {
+      try {
+        // Update Firestore
+        await _firestoreService.updateStudentPhoto(
+          className: widget.className,
+          sectionName: widget.sectionName,
+          studentId: student.id,
+          photoUrl: imageUrl,
+        );
+
+        // Update local state
+        setState(() {
+          student.photoUrl = imageUrl;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Photo updated for ${student.name}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to save photo: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -98,28 +174,47 @@ class _StudentsScreenState extends State<StudentsScreen> {
     return Center(
       child: Card(
         elevation: 4,
+        margin: const EdgeInsets.all(24),
         child: Padding(
           padding: const EdgeInsets.all(32.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.upload_file, size: 64, color: Colors.grey[600]),
+              Icon(Icons.upload_file, size: 64, color: Colors.deepPurple[200]),
               const SizedBox(height: 16),
               const Text(
                 'Upload Student Data',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Select an Excel file for this section.',
+              Text(
+                'Upload Excel file for ${widget.className} - ${widget.sectionName}',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Note: This will replace existing data',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.orange[700]),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: _uploadExcel,
-                icon: const Icon(Icons.cloud_upload_outlined),
-                label: const Text('Choose File'),
+                onPressed: _isUploading ? null : _uploadExcel,
+                icon: _isUploading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cloud_upload),
+                label: Text(_isUploading ? 'Uploading...' : 'Choose Excel File'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
               ),
             ],
           ),
@@ -128,69 +223,116 @@ class _StudentsScreenState extends State<StudentsScreen> {
     );
   }
 
+  Widget _buildStudentCard(Student student) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      elevation: 2.0,
+      child: ListTile(
+        leading: CircleAvatar(
+          radius: 25,
+          backgroundImage: student.photoUrl != null
+              ? NetworkImage(student.photoUrl!)
+              : null,
+          backgroundColor: Colors.grey[300],
+          child: student.photoUrl == null
+              ? Icon(Icons.person, color: Colors.grey[600])
+              : null,
+        ),
+        title: Text(
+          student.name,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text('Roll No: ${student.rollNo}'),
+            if (student.address != null && student.address!.isNotEmpty)
+              Text('Address: ${student.address}', 
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            if (student.parentName != null && student.parentName!.isNotEmpty)
+              Text('Parent: ${student.parentName}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+          ],
+        ),
+        trailing: IconButton(
+          icon: Icon(
+            Icons.camera_alt,
+            color: student.photoUrl != null ? Colors.green : Colors.deepPurple,
+            size: 28,
+          ),
+          onPressed: () => _takePhoto(student),
+          tooltip: student.photoUrl != null ? 'Update Photo' : 'Take Photo',
+        ),
+        isThreeLine: true,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-            'Students in ${widget.section.name} - ${widget.className} - ${widget.schoolName}'),
-      ),
-      body: widget.section.students.isEmpty
-          ? _buildUploadWidget()
-          : ListView.builder(
-              itemCount: widget.section.students.length,
-              itemBuilder: (context, index) {
-                final student = widget.section.students[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                      horizontal: 16.0, vertical: 8.0),
-                  elevation: 2.0,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      children: [
-                        student.imagePath != null
-                            ? CircleAvatar(
-                                backgroundImage:
-                                    FileImage(File(student.imagePath!)),
-                                radius: 30,
-                              )
-                            : const CircleAvatar(
-                                radius: 30,
-                                child: Icon(Icons.person, size: 30),
-                              ),
-                        const SizedBox(width: 16.0),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(student.name,
-                                  style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 8.0),
-                              Text('Address: ${student.address}'),
-                              const SizedBox(height: 4.0),
-                              Text('Parent: ${student.parentName}'),
-                              const SizedBox(height: 4.0),
-                              Text('Contact: ${student.contactNumber}'),
-                              const SizedBox(height: 4.0),
-                              Text('Bus Route: ${student.busRoute}'),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.camera_alt_outlined,
-                              color: Colors.deepPurple, size: 30),
-                          tooltip: 'Take Photo',
-                          onPressed: () => _navigateToCamera(index),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+        title: Text('${widget.className} - ${widget.sectionName}'),
+        actions: [
+          if (_students.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadStudents,
+              tooltip: 'Refresh',
             ),
+          if (_students.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.upload_file),
+              onPressed: _isUploading ? null : _uploadExcel,
+              tooltip: 'Re-upload Excel',
+            ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _students.isEmpty
+              ? _buildUploadWidget()
+              : Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      color: Colors.deepPurple[50],
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Total Students: ${_students.length}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'With Photos: ${_students.where((s) => s.photoUrl != null).length}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _students.length,
+                        itemBuilder: (context, index) {
+                          return _buildStudentCard(_students[index]);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
     );
   }
 }

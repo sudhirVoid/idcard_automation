@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:idcard_automation/models/class_model.dart' as app_class;
 import 'package:idcard_automation/models/school_model.dart';
 import 'package:idcard_automation/screens/sections_screen.dart';
+import 'package:idcard_automation/services/firestore_service.dart';
 
 class ClassesScreen extends StatefulWidget {
   final School school;
@@ -12,6 +13,32 @@ class ClassesScreen extends StatefulWidget {
 }
 
 class _ClassesScreenState extends State<ClassesScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
+  List<String> _classes = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClasses();
+  }
+
+  Future<void> _loadClasses() async {
+    try {
+      final classes = await _firestoreService.getClasses();
+      setState(() {
+        _classes = classes;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
   void _addClass() {
     showDialog(
       context: context,
@@ -30,12 +57,22 @@ class _ClassesScreenState extends State<ClassesScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (controller.text.isNotEmpty) {
-                  setState(() {
-                    widget.school.classes.add(app_class.Class(name: controller.text, sections: []));
-                  });
-                  Navigator.pop(context);
+                  try {
+                    await _firestoreService.addClass(controller.text);
+                    Navigator.pop(context);
+                    _loadClasses(); // Reload classes
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to add class: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 }
               },
               child: const Text('Add'),
@@ -48,26 +85,63 @@ class _ClassesScreenState extends State<ClassesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.school.name),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.school.name),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 80, color: Colors.red[400]),
+              const SizedBox(height: 16),
+              Text('Error loading classes: $_error', 
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.red),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadClasses,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.school.name),
       ),
-      body: widget.school.classes.isEmpty
+      body: _classes.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.class_outlined, size: 80, color: Colors.grey[400]),
                   const SizedBox(height: 16),
-                  const Text('No classes added yet.', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                  const Text('No classes added yet.',
+                      style: TextStyle(fontSize: 18, color: Colors.grey)),
                   const SizedBox(height: 8),
-                  const Text('Tap the + button to add a new class.', style: TextStyle(color: Colors.grey)),
+                  const Text('Tap the + button to add a new class.',
+                      style: TextStyle(color: Colors.grey)),
                 ],
               ),
             )
           : GridView.builder(
               padding: const EdgeInsets.all(16.0),
-              itemCount: widget.school.classes.length,
+              itemCount: _classes.length,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 16.0,
@@ -75,7 +149,8 @@ class _ClassesScreenState extends State<ClassesScreen> {
                 childAspectRatio: 1.0,
               ),
               itemBuilder: (context, index) {
-                final app_class.Class currentClass = widget.school.classes[index];
+                final className = _classes[index];
+                final currentClass = app_class.Class(name: className, sections: []);
                 return GestureDetector(
                   onTap: () {
                     Navigator.push(
@@ -99,7 +174,7 @@ class _ClassesScreenState extends State<ClassesScreen> {
                         Icon(Icons.class_, size: 50, color: Colors.deepPurple),
                         const SizedBox(height: 16),
                         Text(
-                          currentClass.name,
+                          className,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 18,

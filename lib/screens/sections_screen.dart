@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:idcard_automation/models/class_model.dart' as app_class;
 import 'package:idcard_automation/models/section_model.dart';
 import 'package:idcard_automation/screens/students_screen.dart';
+import 'package:idcard_automation/services/firestore_service.dart';
 
 class SectionsScreen extends StatefulWidget {
   final String schoolName;
@@ -14,6 +15,32 @@ class SectionsScreen extends StatefulWidget {
 }
 
 class _SectionsScreenState extends State<SectionsScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
+  List<String> _sections = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSections();
+  }
+
+  Future<void> _loadSections() async {
+    try {
+      final sections = await _firestoreService.getSections(widget.currentClass.name);
+      setState(() {
+        _sections = sections;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
   void _addSection() {
     showDialog(
       context: context,
@@ -32,13 +59,22 @@ class _SectionsScreenState extends State<SectionsScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (controller.text.isNotEmpty) {
-                  setState(() {
-                    widget.currentClass.sections
-                        .add(Section(name: controller.text, students: []));
-                  });
-                  Navigator.pop(context);
+                  try {
+                    await _firestoreService.addSection(widget.currentClass.name, controller.text);
+                    Navigator.pop(context);
+                    _loadSections(); // Reload sections
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to add section: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 }
               },
               child: const Text('Add'),
@@ -51,11 +87,46 @@ class _SectionsScreenState extends State<SectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.currentClass.name),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.currentClass.name),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 80, color: Colors.red[400]),
+              const SizedBox(height: 16),
+              Text('Error loading sections: $_error', 
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.red),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadSections,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.currentClass.name),
       ),
-      body: widget.currentClass.sections.isEmpty
+      body: _sections.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -73,7 +144,7 @@ class _SectionsScreenState extends State<SectionsScreen> {
             )
           : GridView.builder(
               padding: const EdgeInsets.all(16.0),
-              itemCount: widget.currentClass.sections.length,
+              itemCount: _sections.length,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 16.0,
@@ -81,16 +152,15 @@ class _SectionsScreenState extends State<SectionsScreen> {
                 childAspectRatio: 1.0,
               ),
               itemBuilder: (context, index) {
-                final section = widget.currentClass.sections[index];
+                final sectionName = _sections[index];
                 return GestureDetector(
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => StudentsScreen(
-                          schoolName: widget.schoolName,
                           className: widget.currentClass.name,
-                          section: section,
+                          sectionName: sectionName,
                         ),
                       ),
                     );
@@ -107,7 +177,7 @@ class _SectionsScreenState extends State<SectionsScreen> {
                             size: 50, color: Colors.deepPurple),
                         const SizedBox(height: 16),
                         Text(
-                          section.name,
+                          sectionName,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 18,
