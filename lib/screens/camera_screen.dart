@@ -12,6 +12,10 @@ class CameraScreen extends StatefulWidget {
   final String? sectionName;
   final String? studentName;
   final String? rollNo;
+  final String? address;
+  final String? parentName;
+  final String? contactNumber;
+  final String? busRoute;
   
   const CameraScreen({
     super.key,
@@ -20,6 +24,10 @@ class CameraScreen extends StatefulWidget {
     this.sectionName,
     this.studentName,
     this.rollNo,
+    this.address,
+    this.parentName,
+    this.contactNumber,
+    this.busRoute,
   });
 
   @override

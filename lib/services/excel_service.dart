@@ -91,12 +91,10 @@ class ExcelService {
       if (!columnMap.containsKey('class')) {
         throw Exception('Required column "Class" not found in Excel file');
       }
-      if (!columnMap.containsKey('section')) {
-        throw Exception('Required column "Section" not found in Excel file');
-      }
       if (!columnMap.containsKey('name')) {
         throw Exception('Required column "Name" not found in Excel file');
       }
+      // Note: Section is optional - will default to "Default" if not found
 
       print('Column mapping found: $columnMap');
 
@@ -119,9 +117,12 @@ class ExcelService {
         final busRoute = _getCellValue(row, columnMap['bus']);
         final rollNo = _getCellValue(row, columnMap['rollno']);
 
-        // Validate required fields
-        if (className.isEmpty || section.isEmpty || name.isEmpty) {
-          print('Skipping row ${i + 1}: Missing required data (Class, Section, or Name)');
+        // Handle default section - if section is empty, use "Default"
+        final finalSection = section.isEmpty ? 'Default' : section;
+
+        // Validate required fields (Class and Name are required, Section defaults to "Default")
+        if (className.isEmpty || name.isEmpty) {
+          print('Skipping row ${i + 1}: Missing required data (Class or Name)');
           continue;
         }
 
@@ -131,7 +132,7 @@ class ExcelService {
         students.add({
           'rollNo': finalRollNo,
           'className': className,
-          'section': section,
+          'section': finalSection,
           'name': name,
           'address': address.isNotEmpty ? address : null,
           'parentName': parentName.isNotEmpty ? parentName : null,

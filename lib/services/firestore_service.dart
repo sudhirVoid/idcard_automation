@@ -235,6 +235,9 @@ class FirestoreService {
       int count = 0;
 
       for (var student in students) {
+        // Handle default section
+        final sectionName = student['section'] ?? 'Default';
+        
         // Create new student document
         final studentRef = sectionRef.collection('students').doc();
         
@@ -242,7 +245,7 @@ class FirestoreService {
           'name': student['name'],
           'rollNo': student['rollNo'],
           'className': student['className'],
-          'section': student['section'],
+          'section': sectionName,
           'address': student['address'],
           'parentName': student['parentName'],
           'contactNumber': student['contactNumber'],

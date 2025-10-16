@@ -8,12 +8,12 @@ Your Excel file must have these **column headers** (order doesn't matter):
 | Header Name | Alternative Names | Required | Description | Example |
 |-------------|-------------------|----------|-------------|---------|
 | **Class** | Grade, Standard | ✅ Required | Class number | 10, 11, 12 |
-| **Section** | Division | ✅ Required | Section name | Darwin, Einstein, Newton |
 | **Name** | Student Name, Student_Name | ✅ Required | Student's full name | Radha Kawar |
 
 ### **Optional Columns:**
 | Header Name | Alternative Names | Required | Description | Example |
 |-------------|-------------------|----------|-------------|---------|
+| **Section** | Division | ❌ Optional | Section name (defaults to "Default" if empty) | Darwin, Einstein, Newton |
 | **Address** | - | ❌ Optional | Student's address | Rajpur-2, Materiya |
 | **Parents** | Parent, Parent Name, Parent_Name | ❌ Optional | Parent/Guardian name | Shib Prasad Kawar |
 | **Contact** | Phone, Mobile, Contact Number, Contact_Number | ❌ Optional | Phone number | 9869416392 |

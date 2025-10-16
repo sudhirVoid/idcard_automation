@@ -6,6 +6,7 @@ import 'package:idcard_automation/screens/camera_screen.dart';
 import 'package:idcard_automation/screens/image_viewer_screen.dart';
 import 'package:idcard_automation/services/excel_service.dart';
 import 'package:idcard_automation/services/firestore_service.dart';
+import 'package:idcard_automation/widgets/id_card_preview.dart';
 
 class StudentsScreen extends StatefulWidget {
   final String className;
@@ -27,6 +28,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
   List<Student> _students = [];
   bool _isLoading = true;
   bool _isUploading = false;
+  String? _showingPreviewFor; // Track which student's preview is shown
 
   @override
   void initState() {
@@ -129,8 +131,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
           studentId: student.id,
           className: widget.className,
           sectionName: widget.sectionName,
-          studentName: student.name,    // ⭐ Real name from Firestore
-          rollNo: student.rollNo,       // ⭐ Real roll number from Firestore
+          studentName: student.name,
+          rollNo: student.rollNo,
+          address: student.address,
+          parentName: student.parentName,
+          contactNumber: student.contactNumber,
+          busRoute: student.busRoute,
         ),
       ),
     );
@@ -184,6 +190,16 @@ class _StudentsScreenState extends State<StudentsScreen> {
         ),
       );
     }
+  }
+
+  void _togglePreview(Student student) {
+    setState(() {
+      if (_showingPreviewFor == student.id) {
+        _showingPreviewFor = null; // Hide preview
+      } else {
+        _showingPreviewFor = student.id; // Show preview for this student
+      }
+    });
   }
 
   Widget _buildUploadWidget() {
@@ -240,80 +256,171 @@ class _StudentsScreenState extends State<StudentsScreen> {
   }
 
   Widget _buildStudentCard(Student student) {
+    final isShowingPreview = _showingPreviewFor == student.id;
+    
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       elevation: 2.0,
-      child: ListTile(
-        leading: GestureDetector(
-          onTap: () => _viewImage(student),
-          child: Tooltip(
-            message: student.photoUrl != null ? 'Tap to view full image' : 'No photo available',
-            child: Stack(
-              children: [
-                CircleAvatar(
-                  radius: 25,
-                  backgroundImage: student.photoUrl != null
-                      ? NetworkImage(student.photoUrl!)
-                      : null,
-                  backgroundColor: Colors.grey[300],
-                  child: student.photoUrl == null
-                      ? Icon(Icons.person, color: Colors.grey[600])
-                      : null,
-                ),
-                if (student.photoUrl != null)
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: const Icon(
-                        Icons.visibility,
-                        color: Colors.white,
-                        size: 12,
-                      ),
+      child: Column(
+        children: [
+          // Student Information Section
+          ListTile(
+            leading: GestureDetector(
+              onTap: () => _viewImage(student),
+              child: Tooltip(
+                message: student.photoUrl != null ? 'Tap to view full image' : 'No photo available',
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundImage: student.photoUrl != null
+                          ? NetworkImage(student.photoUrl!)
+                          : null,
+                      backgroundColor: Colors.grey[300],
+                      child: student.photoUrl == null
+                          ? Icon(Icons.person, color: Colors.grey[600])
+                          : null,
                     ),
+                    if (student.photoUrl != null)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: const Icon(
+                            Icons.visibility,
+                            color: Colors.white,
+                            size: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            title: Text(
+              student.name,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                Text('Roll No: ${student.rollNo}'),
+                if (student.address != null && student.address!.isNotEmpty)
+                  Text('Address: ${student.address}', 
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                if (student.parentName != null && student.parentName!.isNotEmpty)
+                  Text('Parent: ${student.parentName}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
               ],
             ),
-          ),
-        ),
-        title: Text(
-          student.name,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text('Roll No: ${student.rollNo}'),
-            if (student.address != null && student.address!.isNotEmpty)
-              Text('Address: ${student.address}', 
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            trailing: SizedBox(
+              height: 56, // Match the ListTile height
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Camera Button (top)
+                  SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.camera_alt,
+                        color: student.photoUrl != null ? Colors.green : Colors.deepPurple,
+                        size: 20,
+                      ),
+                      onPressed: () => _takePhoto(student),
+                      tooltip: student.photoUrl != null ? 'Update Photo' : 'Take Photo',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  // Preview Toggle Button (bottom)
+                  SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: IconButton(
+                      icon: Icon(
+                        isShowingPreview ? Icons.visibility_off : Icons.preview,
+                        color: isShowingPreview ? Colors.orange : Colors.blue,
+                        size: 18,
+                      ),
+                      onPressed: () => _togglePreview(student),
+                      tooltip: isShowingPreview ? 'Hide Preview' : 'Show ID Card Preview',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+                ],
               ),
-            if (student.parentName != null && student.parentName!.isNotEmpty)
-              Text('Parent: ${student.parentName}',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-          ],
-        ),
-        trailing: IconButton(
-          icon: Icon(
-            Icons.camera_alt,
-            color: student.photoUrl != null ? Colors.green : Colors.deepPurple,
-            size: 28,
+            ),
+            isThreeLine: true,
           ),
-          onPressed: () => _takePhoto(student),
-          tooltip: student.photoUrl != null ? 'Update Photo' : 'Take Photo',
-        ),
-        isThreeLine: true,
+          // ID Card Preview Section
+          if (isShowingPreview)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                border: Border(
+                  top: BorderSide(color: Colors.grey[300]!),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.preview, color: Colors.blue[700], size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'ID Card Preview',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[700],
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'How the ID card will look',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: IdCardPreview(
+                      photoUrl: student.photoUrl,
+                      name: student.name,
+                      rollNo: student.rollNo,
+                      className: widget.className,
+                      sectionName: widget.sectionName,
+                      address: student.address,
+                      parentName: student.parentName,
+                      contactNumber: student.contactNumber,
+                      busRoute: student.busRoute,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
