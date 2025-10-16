@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:idcard_automation/models/student_model.dart';
 import 'package:idcard_automation/screens/camera_screen.dart';
+import 'package:idcard_automation/screens/image_viewer_screen.dart';
 import 'package:idcard_automation/services/excel_service.dart';
 import 'package:idcard_automation/services/firestore_service.dart';
 
@@ -170,6 +171,21 @@ class _StudentsScreenState extends State<StudentsScreen> {
     }
   }
 
+  void _viewImage(Student student) {
+    if (student.photoUrl != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ImageViewerScreen(
+            imageUrl: student.photoUrl!,
+            studentName: student.name,
+            rollNo: student.rollNo,
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _buildUploadWidget() {
     return Center(
       child: Card(
@@ -228,15 +244,43 @@ class _StudentsScreenState extends State<StudentsScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       elevation: 2.0,
       child: ListTile(
-        leading: CircleAvatar(
-          radius: 25,
-          backgroundImage: student.photoUrl != null
-              ? NetworkImage(student.photoUrl!)
-              : null,
-          backgroundColor: Colors.grey[300],
-          child: student.photoUrl == null
-              ? Icon(Icons.person, color: Colors.grey[600])
-              : null,
+        leading: GestureDetector(
+          onTap: () => _viewImage(student),
+          child: Tooltip(
+            message: student.photoUrl != null ? 'Tap to view full image' : 'No photo available',
+            child: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 25,
+                  backgroundImage: student.photoUrl != null
+                      ? NetworkImage(student.photoUrl!)
+                      : null,
+                  backgroundColor: Colors.grey[300],
+                  child: student.photoUrl == null
+                      ? Icon(Icons.person, color: Colors.grey[600])
+                      : null,
+                ),
+                if (student.photoUrl != null)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.visibility,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
         title: Text(
           student.name,
